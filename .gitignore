@@ -1,4 +1,5 @@
 /server/target
+/server/nano_crl2_lsp*
 node_modules
 out/
 .pnpm-debug.log

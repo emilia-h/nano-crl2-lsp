@@ -3,6 +3,7 @@
   "description": "Extension for mCRL2, implemented using the language server protocol (LSP)",
   "license": "MIT",
   "version": "1.5.0",
+  "publisher": "nano-crl2",
   "categories": [],
   "keywords": [
     "language-server",
@@ -59,15 +60,14 @@
     }
   },
   "scripts": {
-    "postinstall": "cd client && pnpm i",
-    "vscode:prepublish": "npm run esbuild-base -- --minify",
+    "postinstall": "cd client && npm i",
+    "vscode:prepublish": "npm run build",
     "test-compile": "tsc -p ./",
-    "compile": "cross-env NODE_ENV=production tsc -b",
-    "watch": "rm -rf dist && tsc -b -w",
+    "build": "npm run check-types && node esbuild.js --production",
+    "check-types": "tsc --noEmit",
     "lint": "eslint src --ext ts",
-    "pretest": "npm run compile && npm run lint",
+    "pretest": "npm run build && npm run lint",
     "test": "node ./out/test/runTest.js",
-    "build": "webpack --config webpack.config.js",
     "package": "vsce package --no-dependencies",
     "publish": "vsce publish --no-dependencies"
   },
@@ -85,9 +85,12 @@
     "typescript": "5.4.5",
     "vscode-test": "^1.4.0",
     "vscode-uri": "^3.0.2",
-    "webpack": "^5.82.1"
+    "webpack": "^5.82.1",
+    "webpack-cli": "^6.0.1"
   },
   "dependencies": {
+    "esbuild": "^0.25.8",
+    "ts-loader": "^9.5.2",
     "vscode-languageclient": "9.0.1"
   }
 }

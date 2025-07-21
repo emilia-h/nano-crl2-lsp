@@ -3,6 +3,7 @@
  * Licensed under the MIT License. See License.txt in the project root for license information.
  * ------------------------------------------------------------------------------------------ */
 
+import * as path from "path";
 import {
   languages,
   workspace,
@@ -52,7 +53,7 @@ export async function activate(context: ExtensionContext) {
   context.subscriptions.push(disposable);
 
   const traceOutputChannel = window.createOutputChannel("nanoCRL2-lsp trace");
-  const command = process.env.SERVER_PATH || "nano_crl2_lsp";
+  const command = context.asAbsolutePath(path.join("server", "nano_crl2_lsp"));
   const run: Executable = {
     command,
     options: {

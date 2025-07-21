@@ -20,10 +20,20 @@ parts that are strictly necessary. For instance, if you want to ctrl-click on a 
 compiler only runs the name lookup pass for that symbol (i.e., it does not run the entire compiler pipeline to find the
 location of the definition of one symbol).
 
+## Building and Running
+
+Run `npm i` and then `npm run build` in the root directory. You can then press F5 in VSCode to test this extension
+locally.
+
 ## Publishing
 
-For VSCode, refer to
+Run `npm i` and then bundle appropriately by using `npm run build` (which uses esbuild). Also, run
+`cargo build --release` and copy the `nano_crl2_lsp` executable into the `server/` folder.
+
+For publishing the VSCode extension, refer to
 [Publishing Extensions](https://code.visualstudio.com/api/working-with-extensions/publishing-extension).
 
-For VSCodium, refer to [Publishing Extensions](https://github.com/eclipse/openvsx/wiki/Publishing-Extensions). I
-publish to namespace `nano-crl`.
+For publishing the VSCodium extension, refer to
+[Publishing Extensions](https://github.com/eclipse/openvsx/wiki/Publishing-Extensions). I publish to namespace
+`nano-crl`. I run `ovsx publish -p <token>` (optionally with flag `--pre-release`), which should also run
+`npm run build` automatically.
