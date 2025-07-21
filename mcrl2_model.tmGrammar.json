@@ -1,0 +1,24 @@
+{
+    "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+
+    "scopeName": "source.mcrl2_model",
+    "patterns": [
+        { "include": "#comment" },
+        { "include": "#keyword-control" },
+        { "include": "#keyword-other" }
+    ],
+    "repository": {
+        "comment": {
+            "name": "comment.line.percentage.mcrl2",
+            "match": "%.*"
+        },
+        "keyword-control": {
+            "name": "keyword.control.mcrl2",
+            "match": "(?<!\\w)(allow|block|comm|hide|if|lambda|mu|nu|rename|sum|whr)(?!\\w)"
+        },
+        "keyword-other": {
+            "name": "keyword.other.mcrl2",
+            "match": "(?<!\\w)(act|cons|delay|div|end|eqn|exists|forall|glob|init|in|map|mod|pbes|proc|sort|struct|val|var|yaled|delta|false|nil|tau|true)(?!\\w)"
+        }
+    }
+}

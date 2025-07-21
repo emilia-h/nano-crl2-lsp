@@ -1,0 +1,19 @@
+
+act a: Nat;
+
+proc Main(param1, param2: Nat) = f(param1, param2) -> a(param1) . a(param2);
+
+init sum longid: Nat . a(longid) . Main(0, 1);
+
+glob g1: Test;
+
+map f: Nat # Nat -> Bool;
+
+var
+    x, y: Test;
+eqn
+    f(x, x) = forall id: Nat . id == 0;
+
+map x1: Nat;
+
+sort Test = Nat;

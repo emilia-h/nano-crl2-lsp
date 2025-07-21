@@ -1,0 +1,11 @@
+[package]
+name = "nano_crl2_lsp"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde_json = "1.0.78"
+tokio = { version = "1.17.0", features = ["full"] }
+tower-lsp = { version = "0.20.0", features = ["proposed"]}
+serde = { version = "1.0", features = ["derive"] }
+nano_crl2 = { path = "../../nanoCRL2" }
