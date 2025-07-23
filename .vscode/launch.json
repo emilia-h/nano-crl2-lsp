@@ -18,6 +18,7 @@
         "script": "watch"
       },
       "env": {
+        "RUST_BACKTRACE": "1",
         "SERVER_PATH": "${workspaceRoot}/server/target/debug/nano_crl2_lsp.exe"
       }
     },

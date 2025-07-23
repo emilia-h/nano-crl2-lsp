@@ -1,0 +1,399 @@
+% ----------------------------- %
+%            given              %
+% ----------------------------- %
+
+sort TL = struct tl1 | tl2 | tl3 | tl4;
+
+sort P = struct p1 | p2 | p3 | p4;
+
+% ---
+% This is a list of all traffic lights, to make it easier to iterate over all of them
+map tlList: List(TL);
+eqn tlList = [ tl1, tl2, tl3, tl4 ];
+
+% ---
+% Returns: the traffic light corresponding to a path
+map p2tl: P -> TL;
+eqn p2tl(p1) = tl1;
+    p2tl(p2) = tl2;
+    p2tl(p3) = tl3;
+    p2tl(p4) = tl4;
+
+% ---
+% Returns: the set of paths corresponding to a specific traffic light
+map tl2p: TL -> Set(P);
+var tl: TL;
+eqn tl2p(tl) = { p: P | p2tl(p) == tl };
+
+% ---
+% These are the paths that a bus can go onto
+map bus_path_set: FSet(P);
+eqn bus_path_set = { p3, p4 };
+
+% ---
+% traffic lights that non-bus traffic can use
+map normal_traffic_sensor_set: FSet(TL);
+eqn normal_traffic_sensor_set = { tl1, tl2, tl3, tl4 };
+
+% irreflexive and symmetric
+map conflict: P # P -> Bool;
+var path1: P, path2: P;
+eqn conflict(path1, path1) = false;
+    conflict(path1, path2) = path1 in conflict_set(path2);
+
+map conflict_set: P -> FSet(P);
+eqn conflict_set(p1) = { p3, p4 };
+    conflict_set(p2) = { p3, p4 };
+    conflict_set(p3) = { p1, p2 };
+    conflict_set(p4) = { p1, p2 };
+
+% ----------------------------- %
+%        priority queue         %
+% ----------------------------- %
+
+sort PrioLevel = struct no_priority | sensor_priority | bus_priority | emergency_priority;
+sort Prio = struct prio(prio_level: PrioLevel, prio_tl: TL);
+
+% ---
+% Queue that keeps track of priority events. The events must always be sorted
+% on priority level in descending order.
+sort PrioQueue = List(Prio);
+
+map empty_queue: PrioQueue;
+eqn empty_queue = [];
+
+% ---
+% returns: a new priority queue with the given traffic light removed
+map remove_event: PrioQueue # TL -> PrioQueue;
+var xs: PrioQueue;
+    curr_level: PrioLevel;
+    tl: TL, curr_tl: TL;
+eqn remove_event([], tl) = [];
+
+    remove_event(prio(curr_level, tl) |> xs, tl) = xs;
+
+    (curr_tl != tl) ->
+        remove_event(prio(curr_level, curr_tl) |> xs, tl) =
+                prio(curr_level, curr_tl) |> remove_event(xs, tl);
+
+% returns: a new priority queue with the event added
+map add_event: PrioQueue # Prio -> PrioQueue;
+var xs: PrioQueue;
+    event: Prio;
+    new_level: PrioLevel;
+    new_tl: TL;
+    curr_level: PrioLevel;
+    curr_tl: TL;
+eqn add_event([], event) = [event];
+
+    % if you encounter the same traffic light, replace and terminate
+    (new_level <= curr_level && curr_tl == new_tl) ->
+        add_event(prio(curr_level, curr_tl) |> xs, prio(new_level, new_tl)) =
+            prio(curr_level, new_tl) |> xs;
+
+    % if you encounter a different traffic light with higher level, continue
+    (new_level <= curr_level && new_tl != curr_tl) ->
+        add_event(prio(curr_level, curr_tl) |> xs, prio(new_level, new_tl)) =
+            prio(curr_level, curr_tl) |> add_event(xs, prio(new_level, new_tl));
+
+    % if we've gone past the level of this traffic light, then insert here
+    (new_level > curr_level && curr_tl != new_tl) ->
+        add_event(prio(curr_level, curr_tl) |> xs, prio(new_level, new_tl)) =
+            prio(new_level, new_tl) |> prio(curr_level, curr_tl) |> remove_event(xs, new_tl);
+
+    % if we're going past the current level, and the first traffic light in the next block is the same
+    (new_level > curr_level && curr_tl == new_tl) ->
+        add_event(prio(curr_level, curr_tl) |> xs, prio(new_level, new_tl)) =
+            prio(new_level, new_tl) |> xs;
+
+% ----------------------------- %
+%          actual code          %
+% ----------------------------- %
+
+% ---
+% auxiliary type for communication
+sort MaybeTL = struct
+    just(value: TL) ? is_just |
+    none ? is_none;
+
+sort Color = struct green_color | yellow_color | red_color;
+
+% ---
+% auxiliary type for keeping the state of each traffic light.
+% `time` for a yellow light is how long this TL has to stay yellow for.
+% `time` for a red light is how long other traffic lights still have to wait for it.
+sort TLState = struct tl_state(time: Nat, color: Color);
+
+% ---
+% I/O actions visible to the outside world
+act sensor: TL;
+act green: TL;
+act yellow: TL;
+act red: TL;
+act second;
+act bus: P;
+act emergency: TL;
+
+% ---
+% internal communication/synchronization actions
+act send_sensor, receive_sensor, comm_sensor: MaybeTL;
+act send_bus, receive_bus, comm_bus: MaybeTL;
+act send_emergency, receive_emergency, comm_emergency: MaybeTL;
+act send_tlstate, receive_tlstate, comm_tlstate: TL # TLState;
+act send_tl_update, receive_tl_update, comm_tl_update: TL # Color;
+act send_start_updates, receive_start_updates, comm_start_updates;
+act wait0, wait1, wait2, wait3, wait4;
+
+% ---
+% Returns: the list of traffic lights whose colors have to be updated, to avoid
+% a long chain of tau actions in the UpdateTrafficLights process.
+map find_updateable_tls: (TL -> TLState) # List(TL) -> List(TL);
+var state: TL -> TLState;
+    tl: TL;
+    tls: List(TL);
+eqn find_updateable_tls(state, []) = [];
+
+    (color(state(tl)) == red_color || time(state(tl)) > 0) ->
+        find_updateable_tls(state, tl |> tls) = find_updateable_tls(state, tls);
+
+    (color(state(tl)) != red_color && time(state(tl)) == 0) ->
+        find_updateable_tls(state, tl |> tls) = tl |> find_updateable_tls(state, tls);
+
+map decrease_timers: (TL -> TLState) # List(TL) -> (TL -> TLState);
+var state: TL -> TLState;
+    tl: TL;
+    tls: List(TL);
+eqn decrease_timers(state, []) = state;
+
+    (time(state(tl)) == 0) ->
+        decrease_timers(state, tl |> tls) = decrease_timers(state, tls);
+
+    (time(state(tl)) > 0) ->
+        decrease_timers(state, tl |> tls) = decrease_timers(
+            state[tl -> tl_state(max(time(state(tl)) - 1, 0), color(state(tl)))], tls
+        );
+
+% ---
+% See if a traffic light is free to turn green, i.e. all of its conflicting
+% paths are turned red
+map is_free: (TL -> TLState) # TL -> Bool;
+var state: TL -> TLState;
+    tl: TL;
+eqn is_free(state, tl) = (forall k1: P, k2: P .
+    (p2tl(k1) == tl && conflict(k1, k2)) =>
+    (color(state(p2tl(k2))) == red_color && time(state(p2tl(k2))) == 0)
+);
+
+proc ReceiveEmergencySystem(queue: PrioQueue) =
+    % collect emergency signals
+    (sum tl: TL .
+        receive_emergency(just(tl)).
+        (sum state_value: TLState .
+            receive_tlstate(tl, state_value).
+            ((color(state_value) == green_color)
+            -> ReceiveBusSystem(queue)
+            <> ReceiveBusSystem(add_event(queue, prio(emergency_priority, tl)))
+            )
+        )
+    ) +
+
+    receive_emergency(none).
+    ReceiveBusSystem(queue);
+
+proc ReceiveBusSystem(queue: PrioQueue) =
+    % collect bus signals
+    (sum tl: TL .
+        receive_bus(just(tl)).
+        (sum state_value: TLState .
+            receive_tlstate(tl, state_value).
+            ((color(state_value) == green_color)
+            -> ReceiveSensorSystem(queue)
+            <> ReceiveSensorSystem(add_event(queue, prio(bus_priority, tl)))
+            )
+        )
+    ) +
+
+    receive_bus(none).
+    ReceiveSensorSystem(queue);
+
+proc ReceiveSensorSystem(queue: PrioQueue) =
+    % collect sensors and update queue
+    (sum tl: TL .
+        receive_sensor(just(tl)).
+        (sum state_value: TLState .
+            receive_tlstate(tl, state_value).
+            ((color(state_value) == green_color)
+            -> QueueHandlerSystem(queue)
+            <> QueueHandlerSystem(add_event(queue, prio(sensor_priority, tl)))
+            )
+        )
+    ) +
+
+    receive_sensor(none).
+    QueueHandlerSystem(queue);
+
+proc QueueHandlerSystem(queue: PrioQueue) =
+    (queue == [])
+    -> (
+        send_start_updates.
+        wait0.
+        ReceiveEmergencySystem(queue)
+    )
+    <> (
+        send_tl_update(prio_tl(head(queue)), green_color).
+        (sum state_value: TLState .
+            receive_tlstate(prio_tl(head(queue)), state_value).
+
+            (
+                (color(state_value) == green_color)
+                -> (
+                    QueueHandlerSystem(tail(queue))
+                )
+                <> (
+                    send_start_updates.
+                    wait0.
+                    ReceiveEmergencySystem(queue)
+                )
+            )
+        )
+    );
+
+% ---
+% This starts up the main system.
+proc System =
+    ReceiveEmergencySystem(empty_queue);
+
+proc Sensor =
+    (sum tl: TL .
+        sensor(tl).
+        send_sensor(just(tl)).
+        wait2.
+        Sensor
+    ) +
+    send_sensor(none).
+    wait2.
+    Sensor;
+
+proc Bus =
+    (sum p: P . (p in bus_path_set) ->
+        bus(p).
+        send_bus(just(p2tl(p))).
+        wait3.
+        Bus
+    ) +
+    send_bus(none).
+    wait3.
+    Bus;
+
+proc Emergency =
+    (sum tl: TL .
+        emergency(tl).
+        send_emergency(just(tl)).
+        wait4.
+        Emergency
+    ) +
+    send_emergency(none).
+    wait4.
+    Emergency;
+
+% ---
+% This maintains traffic light state and turns them to a new color only if
+% necessary.
+% It also updates the timers of the different traffic light colors.
+% This component mainly takes care of the safety properties, while the other
+% components mostly maintain fairness/liveness properties.
+proc TrafficLightManager(state: TL -> TLState) =
+    (sum tl: TL .
+        send_tlstate(tl, state(tl)).
+        TrafficLightManager(state)
+    ) +
+
+    (sum tl: TL, new_color: Color . (
+        receive_tl_update(tl, new_color).
+
+        (
+            % try to set traffic light to green
+            ((new_color == green_color) -> (
+                (color(state(tl)) == red_color && is_free(state, tl))
+                -> (
+                    green(tl).
+                    TrafficLightManager(state[tl -> tl_state(2, green_color)])
+                )
+                <> (
+                    TrafficLightManager(state)
+                )
+            )) +
+
+            % try to set traffic light to yellow
+            ((new_color == yellow_color) -> (
+                (color(state(tl)) == green_color)
+                -> (
+                    yellow(tl).
+                    TrafficLightManager(state[tl -> tl_state(2, yellow_color)])
+                )
+                <> (
+                    TrafficLightManager(state)
+                )
+            ))
+        )
+    )) +
+
+    receive_start_updates.
+    UpdateTrafficLights(
+        decrease_timers(state, tlList),
+        find_updateable_tls(decrease_timers(state, tlList), tlList)
+    );
+
+proc UpdateTrafficLights(state: TL -> TLState, tls: List(TL)) =
+    (tls == [])
+    -> (
+        wait1.
+        TrafficLightManager(state)
+    )
+    <> (
+        % decrease time of this TL by 1, or if it was 0, turn yellow
+        ((color(state(head(tls))) == green_color) -> (
+            yellow(head(tls)).
+            UpdateTrafficLights(
+                state[head(tls) -> tl_state(2, yellow_color)],
+                tail(tls)
+            )
+        )) +
+
+        % decrease time of this TL by 1, or if it was 0, turn red
+        ((color(state(head(tls))) == yellow_color) -> (
+            red(head(tls)).
+            UpdateTrafficLights(
+                state[head(tls) -> tl_state(3, red_color)],
+                tail(tls)
+            )
+        ))
+    );
+
+init hide(
+    {
+        comm_sensor, comm_bus, comm_emergency,
+        comm_tlstate, comm_tl_update, comm_start_updates
+    },
+    allow(
+        {
+            green, yellow, red, sensor, second, bus, emergency,
+            comm_sensor, comm_bus, comm_emergency,
+            comm_tlstate, comm_tl_update, comm_start_updates
+        },
+        comm(
+            {
+                wait0 | wait1 | wait2 | wait3 | wait4 -> second,
+                send_sensor | receive_sensor -> comm_sensor,
+                send_bus | receive_bus -> comm_bus,
+                send_emergency | receive_emergency -> comm_emergency,
+                send_tlstate | receive_tlstate -> comm_tlstate,
+                send_tl_update | receive_tl_update -> comm_tl_update,
+                send_start_updates | receive_start_updates -> comm_start_updates
+            },
+            System ||
+            Sensor || Emergency || Bus ||
+            TrafficLightManager(lambda tl: TL . tl_state(0, red_color))
+        )
+    )
+);

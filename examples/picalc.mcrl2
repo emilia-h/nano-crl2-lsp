@@ -1,0 +1,537 @@
+
+sort PiName = Nat;
+
+sort PiIdentifier = Nat;
+
+sort MaybePiName = struct
+    no_name ? is_no_name |
+    some_name(name: PiName) ? is_some_name;
+
+sort PiSemantics = struct early_semantics | late_semantics;
+
+sort PiAction = struct
+    free_input_action(channel: PiName, data: PiName) ? is_free_input_action |
+    bound_input_action(channel: PiName, data: PiName) ? is_bound_input_action |
+    free_output_action(channel: PiName, data: PiName) ? is_free_output_action |
+    bound_output_action(channel: PiName, data: PiName) ? is_bound_output_action |
+    tau_action ? is_tau_action;
+
+sort PiAgent = struct
+    zero ? is_zero |
+    summation(lhs: PiAgent, rhs: PiAgent) ? is_summation |
+    input_prefix(channel: PiName, data: PiName, suffix: PiAgent) ? is_input_prefix |
+    output_prefix(channel: PiName, data: PiName, suffix: PiAgent) ? is_output_prefix |
+    tau_prefix(suffix: PiAgent) ? is_tau_prefix |
+    parallel_composition(lhs: PiAgent, rhs: PiAgent) ? is_parallel_composition |
+    restriction(name: PiName, suffix: PiAgent) ? is_restriction |
+    match(name1: PiName, name2: PiName, suffix: PiAgent) ? is_match |
+    identifier(id: PiIdentifier, args: List(PiName)) ? is_identifier;
+
+sort PiTransition = struct pi_transition(
+    action: PiAction,
+    next_agent: PiAgent
+);
+
+sort PiDefinition = struct pi_definition(
+    arity: Nat, % for params, use [0, ..., arity - 1]
+    agent: PiAgent
+);
+
+act pi_action: PiAction;
+
+map pi_names: Set(PiName);
+eqn pi_names = { name': PiName | name' < 10 };
+% eqn pi_names = { name': PiName | true };
+
+map is_disjoint: FSet(PiName) # FSet(PiName) -> Bool;
+var
+    set1': FSet(PiName);
+    set2': FSet(PiName);
+eqn
+    is_disjoint(set1', set2') = forall name': PiName . !(name' in set1') || !(name' in set2');
+
+map generic_names_list: List(PiName) # FSet(PiName) # (PiName # FSet(PiName) -> Bool) -> FSet(PiName);
+var
+    bound': FSet(PiName);
+    head': PiName;
+    tail': List(PiName);
+    f': PiName # FSet(PiName) -> Bool;
+eqn
+    generic_names_list([], bound', f') = {};
+    generic_names_list(head' |> tail', bound', f') =
+        if (f'(head', bound'), { head' }, {}) +
+        generic_names_list(tail', bound', f');
+
+map bound_names_action: PiAction -> FSet(PiName);
+var
+    channel': PiName;
+    data': PiName;
+eqn
+    bound_names_action(free_input_action(channel', data')) = {};
+    bound_names_action(bound_input_action(channel', data')) = { data' };
+    bound_names_action(free_output_action(channel', data')) = {};
+    bound_names_action(bound_output_action(channel', data')) = { data' };
+    bound_names_action(tau_action) = {};
+
+map free_names_action: PiAction -> FSet(PiName);
+var
+    channel': PiName;
+    data': PiName;
+eqn
+    free_names_action(free_input_action(channel', data')) = { channel', data' };
+    free_names_action(bound_input_action(channel', data')) = { channel' };
+    free_names_action(free_output_action(channel', data')) = { channel', data' };
+    free_names_action(bound_output_action(channel', data')) = { channel' };
+    free_names_action(tau_action) = {};
+
+map names_action: PiAction -> FSet(PiName);
+var
+    channel': PiName;
+    data': PiName;
+eqn
+    names_action(free_input_action(channel', data')) = { channel', data' };
+    names_action(bound_input_action(channel', data')) = { channel', data' };
+    names_action(free_output_action(channel', data')) = { channel', data' };
+    names_action(bound_output_action(channel', data')) = { channel', data' };
+    names_action(tau_action) = {};
+
+map generic_names: PiAgent # FSet(PiName) # (PiName # FSet(PiName) -> Bool) -> FSet(PiName);
+var
+    bound': FSet(PiName);
+    f': PiName # FSet(PiName) -> Bool;
+    lhs': PiAgent;
+    rhs': PiAgent;
+    channel': PiName;
+    data': PiName;
+    suffix': PiAgent;
+    name': PiName;
+    name1': PiName;
+    name2': PiName;
+    id': PiIdentifier;
+    args': List(PiName);
+eqn
+    generic_names(zero, bound', f') = {};
+
+    generic_names(summation(lhs', rhs'), bound', f') =
+        generic_names(lhs', bound', f') + generic_names(rhs', bound', f');
+
+    generic_names(input_prefix(channel', data', suffix'), bound', f') =
+        if (f'(channel', bound'), { channel' }, {}) +
+        generic_names(suffix', bound' + { data' }, f');
+
+    generic_names(output_prefix(channel', data', suffix'), bound', f') =
+        if (f'(channel', bound'), { channel' }, {}) +
+        if (f'(data', bound'), { data' }, {}) +
+        generic_names(suffix', bound', f');
+
+    generic_names(tau_prefix(suffix'), bound', f') = generic_names(suffix', bound', f');
+
+    generic_names(parallel_composition(lhs', rhs'), bound', f') =
+        generic_names(lhs', bound', f') + generic_names(rhs', bound', f');
+
+    generic_names(restriction(name', suffix'), bound', f') =
+        generic_names(suffix', bound' + { name' }, f');
+
+    generic_names(match(name1', name2', suffix'), bound', f') =
+        if (f'(name1', bound'), { name1' }, {}) +
+        if (f'(name2', bound'), { name2' }, {}) +
+        generic_names(suffix', bound', f');
+
+    generic_names(identifier(id', args'), bound', f') = generic_names_list(args', bound', f');
+
+map bound_names: PiAgent -> FSet(PiName);
+var agent': PiAgent;
+eqn
+    bound_names(agent') = generic_names(agent', {}, f)
+    whr
+        f = lambda name': PiName, bound_set': FSet(PiName) . name' in bound_set'
+    end;
+
+map free_names: PiAgent -> FSet(PiName);
+var agent': PiAgent;
+eqn
+    free_names(agent') = generic_names(agent', {}, f)
+    whr
+        f = lambda name': PiName, bound_set': FSet(PiName) . !(name' in bound_set')
+    end;
+
+map names: PiAgent -> FSet(PiName);
+var agent': PiAgent;
+eqn
+    names(agent') = generic_names(agent', {}, f)
+    whr
+        f = lambda name': PiName, bound_set': FSet(PiName) . true
+    end;
+
+map get_unused_name: Set(PiName) # PiName -> PiName;
+var
+    set': Set(PiName);
+    i': PiName;
+eqn
+    i' in set' -> get_unused_name(set', i') = get_unused_name(set', i' + 1);
+    !(i' in set') -> get_unused_name(set', i') = i';
+
+map map_name_list: List(PiName) # (PiName -> PiName) -> List(PiName);
+var
+    sigma': PiName -> PiName;
+    head': PiName;
+    tail': List(PiName);
+eqn
+    map_name_list([], sigma') = [];
+    map_name_list(head' |> tail', sigma') =
+        sigma'(head') |> map_name_list(tail', sigma');
+
+map substitute_rec: PiAgent # (PiName -> PiName) # Set(PiName) -> PiAgent;
+var
+    sigma': PiName -> PiName;
+    range': Set(PiName); % the set of names that is mapped to
+    lhs': PiAgent;
+    rhs': PiAgent;
+    channel': PiName;
+    data': PiName;
+    suffix': PiAgent;
+    name': PiName;
+    name1': PiName;
+    name2': PiName;
+    id': PiIdentifier;
+    args': List(PiName);
+eqn
+    substitute_rec(zero, sigma', range') = zero;
+
+    substitute_rec(summation(lhs', rhs'), sigma', range') = summation(
+        substitute_rec(lhs', sigma', range'),
+        substitute_rec(rhs', sigma', range')
+    );
+
+    % note: (a(x) . P')[x -> new, ...] = (a(x) . P')[...] because of shadowing; note that a = x is possible!
+    % and (a(x) . P')[old -> new] without overlap can just pass through the substitution
+    !(data' in range') ->
+        substitute_rec(input_prefix(channel', data', suffix'), sigma', range') = input_prefix(
+            sigma'(channel'),
+            data',
+            substitute_rec(suffix', sigma'[data' -> data'], range')
+        );
+
+    % (a(x) . P')[old -> x] = (a(y) . P'[x -> y])[old -> x] with y fresh (alpha conversion)
+    data' in range' ->
+        substitute_rec(input_prefix(channel', data', suffix'), sigma', range') = input_prefix(
+            sigma'(channel'),
+            unused_name,
+            substitute_rec(suffix', sigma'[data' -> unused_name], range' + { unused_name })
+        )
+        whr
+            unused_name = get_unused_name(range' + names(suffix'), 0)
+        end;
+
+    substitute_rec(output_prefix(channel', data', suffix'), sigma', range') = output_prefix(
+        sigma'(channel'),
+        sigma'(data'),
+        substitute_rec(suffix', sigma', range')
+    );
+
+    substitute_rec(tau_prefix(suffix'), sigma', range') = tau_prefix(substitute_rec(suffix', sigma', range'));
+
+    substitute_rec(parallel_composition(lhs', rhs'), sigma', range') = parallel_composition(
+        substitute_rec(lhs', sigma', range'),
+        substitute_rec(rhs', sigma', range')
+    );
+
+    % same rules as for input_prefix, because they both bind something
+    % `((x) P')[x -> new] = (x) P'` because of shadowing
+    % and `((x) P')sigma` without overlap can just pass through the substitution
+    !(name' in range') ->
+        substitute_rec(restriction(name', suffix'), sigma', range') = restriction(
+            name',
+            substitute_rec(suffix', sigma'[name' -> name'], range')
+        );
+
+    % ((x) P')[old -> x] = ((y) P'[x -> y])[old -> x] with y fresh (alpha conversion)
+    (name' in range') ->
+        substitute_rec(restriction(name', suffix'), sigma', range') = restriction(
+            unused_name,
+            substitute_rec(suffix', sigma'[name' -> unused_name], range' + { unused_name })
+        )
+        whr
+            unused_name = get_unused_name(range' + names(suffix'), 0)
+        end;
+
+    substitute_rec(match(name1', name2', suffix'), sigma', range') = match(
+        sigma'(name1'),
+        sigma'(name2'),
+        substitute_rec(suffix', sigma', range')
+    );
+
+    substitute_rec(identifier(id', args'), sigma', range') = identifier(
+        id',
+        map_name_list(args', sigma')
+    );
+
+map substitute_single: PiAgent # PiName # PiName -> PiAgent;
+var
+    agent': PiAgent;
+    old': PiName;
+    new': PiName;
+eqn
+    substitute_single(agent', old', new') = substitute_rec(agent', sigma, { old', new' })
+    whr
+        sigma = lambda name': PiName . if (name' == old', new', name')
+    end;
+
+map outgoing: (PiIdentifier -> PiDefinition) # PiAgent # PiSemantics -> Set(PiTransition);
+var
+    semantics': PiSemantics;
+    defs': PiIdentifier -> PiDefinition;
+    lhs': PiAgent;
+    rhs': PiAgent;
+    channel': PiName;
+    data': PiName;
+    suffix': PiAgent;
+    name': PiName;
+    name1': PiName;
+    name2': PiName;
+    id': PiIdentifier;
+    args': List(PiName);
+eqn
+    outgoing(defs', zero, semantics') = {};
+
+    % SUM
+    outgoing(defs', summation(lhs', rhs'), semantics') =
+        outgoing(defs', lhs', semantics') +
+        outgoing(defs', rhs', semantics');
+
+    % INPUT
+    outgoing(defs', input_prefix(channel', data', suffix'), late_semantics) = {
+        transition: PiTransition |
+        exists name': PiName .
+            name' in pi_names &&
+            !(name' in free_names(restriction(data', suffix'))) &&
+            transition == pi_transition(
+                bound_input_action(channel', name'),
+                substitute_single(suffix', data', name')
+            )
+    };
+    % EARLY-INPUT
+    outgoing(defs', input_prefix(channel', data', suffix'), early_semantics) = {
+        transition: PiTransition |
+        exists name': PiName .
+            name' in pi_names &&
+            transition == pi_transition(
+                free_input_action(channel', name'),
+                substitute_single(suffix', data', name')
+            )
+    };
+
+    % OUTPUT
+    outgoing(defs', output_prefix(channel', data', suffix'), semantics') = {
+        pi_transition(free_output_action(channel', data'), suffix')
+    };
+
+    % TAU
+    outgoing(defs', tau_prefix(suffix'), semantics') = {
+        pi_transition(tau_action,  suffix')
+    };
+
+    % PAR, COM, CLOSE
+    outgoing(defs', parallel_composition(lhs', rhs'), semantics') =
+        % PAR (take only left transition)
+        {
+            transition: PiTransition |
+            exists transition': PiTransition .
+                transition' in rec1 &&
+                is_disjoint(bound_names_action(action(transition')), free_names(rhs')) &&
+                transition == pi_transition(
+                    action(transition'),
+                    parallel_composition(next_agent(transition'), rhs')
+                )
+        } +
+        % PAR (take only right transition)
+        {
+            transition: PiTransition |
+            exists transition': PiTransition .
+                transition' in rec2 &&
+                is_disjoint(bound_names_action(action(transition')), free_names(lhs')) &&
+                transition == pi_transition(
+                    action(transition'),
+                    parallel_composition(lhs', next_agent(transition'))
+                )
+        } +
+        if (
+            semantics' == late_semantics,
+            % COM (synchronize action a'b | a(c) so that P | Q --(tau)-> P' | Q'[c -> b])
+            {
+                transition: PiTransition |
+                action(transition) == tau_action &&
+                exists transition1, transition2: PiTransition .
+                    ((transition1 in rec1 && transition2 in rec2) || (transition1 in rec2 && transition2 in rec1)) &&
+                    is_free_output_action(action(transition1)) &&
+                    is_bound_input_action(action(transition2)) &&
+                    channel(action(transition1)) == channel(action(transition2)) &&
+                    next_agent(transition) == parallel_composition( % P' | Q'[c -> b]
+                        next_agent(transition1),
+                        substitute_single(
+                            next_agent(transition2),
+                            data(action(transition2)),
+                            data(action(transition1))
+                        )
+                    )
+            },
+            % EARLY-COM (synchronize action a'b | a b so that p | q --(tau)-> p' | q')
+            {
+                transition: PiTransition |
+                action(transition) == tau_action &&
+                exists transition1, transition2: PiTransition .
+                    ((transition1 in rec1 && transition2 in rec2) || (transition1 in rec2 && transition2 in rec1)) &&
+                    is_free_output_action(action(transition1)) && % P --(a'b)-> P'
+                    is_free_input_action(action(transition2)) && % Q --(a b)-> Q'
+                    channel(action(transition1)) == channel(action(transition2)) && % a'_ and a _ match
+                    data(action(transition1)) == data(action(transition2)) && % _'b and _ b match
+                    next_agent(transition) == parallel_composition( % P' | Q'
+                        next_agent(transition1),
+                        next_agent(transition2)
+                    )
+            }
+        ) +
+        if (
+            semantics' == late_semantics,
+            % CLOSE (synchronize action a'(b) | a(b) so that P | Q --(tau)-> (b)(P' | Q'))
+            {
+                transition: PiTransition |
+                action(transition) == tau_action && % --(tau)->
+                exists transition1, transition2: PiTransition .
+                    ((transition1 in rec1 && transition2 in rec2) || (transition1 in rec2 && transition2 in rec1)) &&
+                    is_bound_output_action(action(transition1)) && % P --(a'(b))-> P'
+                    is_bound_input_action(action(transition2)) && % Q --(a(b))-> Q'
+                    channel(action(transition1)) == channel(action(transition2)) && % a'(_) and a(_) match
+                    data(action(transition1)) == data(action(transition2)) && % _'(b) and _(b) match
+                    next_agent(transition) == restriction( % (b)(P' | Q')
+                        data(action(transition1)),
+                        parallel_composition(
+                            next_agent(transition1),
+                            next_agent(transition2)
+                        )
+                    )
+            },
+            % EARLY-CLOSE LEFT (synchronize action a'(b) | a b so that P | Q --(tau)-> (b)(P' | Q'))
+            {
+                transition: PiTransition |
+                action(transition) == tau_action && % --(tau)->
+                exists transition1, transition2: PiTransition .
+                    transition1 in rec1 && transition2 in rec2 &&
+                    is_bound_output_action(action(transition1)) && % P --(a'(b))-> P'
+                    is_free_input_action(action(transition2)) && % Q --(a b)-> Q'
+                    channel(action(transition1)) == channel(action(transition2)) && % a'(_) and a _ match
+                    data(action(transition1)) == data(action(transition2)) && % _'(b) and _ b match
+                    !(data(action(transition1)) in free_names(rhs')) && % z not in fn(Q)
+                    next_agent(transition) == restriction( % (b)(P' | Q')
+                        data(action(transition1)),
+                        parallel_composition(
+                            next_agent(transition1),
+                            next_agent(transition2)
+                        )
+                    )
+            } +
+            % EARLY-CLOSE RIGHT (synchronize action a b | a'(b) so that P | Q --(tau)-> (b)(P' | Q'))
+            {
+                transition: PiTransition |
+                action(transition) == tau_action && % --(tau)->
+                exists transition1, transition2: PiTransition .
+                    transition1 in rec1 && transition2 in rec2 &&
+                    is_bound_output_action(action(transition2)) && % Q --(a'(b))-> Q'
+                    is_free_input_action(action(transition1)) && % P --(a b)-> P'
+                    channel(action(transition1)) == channel(action(transition2)) && % a'(_) and a _ match
+                    data(action(transition1)) == data(action(transition2)) && % _'(b) and _ b match
+                    !(data(action(transition1)) in free_names(lhs')) && % z not in fn(P)
+                    next_agent(transition) == restriction( % (b)(P' | Q')
+                        data(action(transition1)),
+                        parallel_composition(
+                            next_agent(transition1),
+                            next_agent(transition2)
+                        )
+                    )
+            }
+        )
+    whr
+        rec1 = outgoing(defs', lhs', semantics'),
+        rec2 = outgoing(defs', rhs', semantics')
+    end;
+
+    outgoing(defs', restriction(name', suffix'), semantics') =
+        % RES
+        {
+            transition: PiTransition |
+            exists transition': PiTransition .
+                transition' in rec &&
+                !(name' in names_action(action(transition'))) &&
+                transition == pi_transition(
+                    action(transition'),
+                    restriction(name', next_agent(transition'))
+                )
+        } +
+        % OPEN
+        if (
+            semantics' == late_semantics,
+            {
+                transition: PiTransition |
+                exists transition': PiTransition, w: PiName .
+                    w in pi_names &&
+                    transition' in rec && % P --(x'y)-> P'
+                    is_free_output_action(action(transition')) && % action of the form x'y
+                    data(action(transition')) == name' && % y matches the name of the restriction
+                    channel(action(transition')) != name' && % x != y
+                    !(w in free_names(restriction(name', next_agent(transition')))) && % w not in fn((y) P')
+                    transition == pi_transition( % (y) P --(x'(w))-> P'[y -> w]
+                        bound_output_action(channel(action(transition')), w),
+                        substitute_single(
+                            next_agent(transition'),
+                            name',
+                            w
+                        )
+                    )
+            },
+            {
+                transition: PiTransition |
+                exists transition': PiTransition .
+                    transition' in rec && % P --(x'y)-> P'
+                    channel(action(transition')) != data(action(transition')) && % x != y
+                    transition == pi_transition( % (y) P --(x'(y))-> P'
+                        bound_output_action(
+                            channel(action(transition')),
+                            data(action(transition'))
+                        ),
+                        next_agent(transition')
+                    )
+            }
+        )
+    whr
+        rec = outgoing(defs', suffix', semantics')
+    end;
+
+    % MATCH
+    outgoing(defs', match(name1', name2', suffix'), semantics') = if (
+        name1' == name2',
+        outgoing(defs', suffix', semantics'),
+        {}
+    );
+
+    % IDE
+    outgoing(defs', identifier(id', args'), semantics') = outgoing(
+        defs',
+        substitute_rec(
+            agent(def),
+            lambda old': PiName . if (old' < arity(def), args' . old', old'),
+            { n': PiName | n' in args' || n' < arity(def) }
+        ),
+        semantics'
+    )
+    whr
+        def = defs'(id')
+    end;
+
+proc PiInterpreter(
+    defs': PiIdentifier -> PiDefinition,
+    agent': PiAgent
+) =
+    sum action': PiAction, next_agent': PiAgent .
+        (pi_transition(action', next_agent') in outgoing(defs', agent', late_semantics)) ->
+            pi_action(action') .
+            PiInterpreter(defs', next_agent');

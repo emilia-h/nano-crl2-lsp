@@ -103,6 +103,7 @@ impl LanguageServer for Backend {
             },
         })
     }
+
     async fn initialized(&self, _: InitializedParams) {
         self.client
             .log_message(MessageType::INFO, "initialized!")
@@ -154,7 +155,7 @@ impl LanguageServer for Backend {
 
         self.client.log_message(
             MessageType::LOG,
-            &format!("goto_definition {:?} {:?}", document_uri.path(), position),
+            format!("goto_definition {:?} {:?}", document_uri.path(), position),
         ).await;
 
         match self.cursor_source_click(document_uri, position).await? {
@@ -172,7 +173,7 @@ impl LanguageServer for Backend {
 
         self.client.log_message(
             MessageType::LOG,
-            &format!("references {:?} {:?}", document_uri.path(), position),
+            format!("references {:?} {:?}", document_uri.path(), position),
         ).await;
 
         match self.cursor_source_click(document_uri, position).await? {
@@ -221,53 +222,34 @@ impl LanguageServer for Backend {
         Ok(None)
     }
 
-    async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
-        let document_uri = params.text_document_position.text_document.uri;
+    async fn completion(
+        &self,
+        params: CompletionParams
+    ) -> Result<Option<CompletionResponse>> {
+        let document_uri = params.text_document_position.text_document.uri.to_string();
         let position = params.text_document_position.position;
+        let loc = SourceCursorPos::new(position.line, position.character);
 
-        // let offset = char + position.character as usize;
+        self.client.log_message(MessageType::LOG, format!("completion {}", document_uri)).await;
 
-        // TODO
+        let mut result = Vec::new();
+        result.push(CompletionItem {
+            label: "hello_item".to_owned(),
+            insert_text: None,
+            kind: None,
+            detail: Some("Hello".to_owned()),
+            ..Default::default()
+        });
 
-        // let completions = completion(&ast, offset);
-        // let mut result = Vec::with_capacity(completions.len());
-        // for (_, item) in completions {
-        //     match item {
-        //         nano_crl2_lsp::completion::ImCompleteCompletionItem::Variable(var) => {
-        //             result.push(CompletionItem {
-        //                 label: var.clone(),
-        //                 insert_text: Some(var.clone()),
-        //                 kind: Some(CompletionItemKind::VARIABLE),
-        //                 detail: Some(var),
-        //                 ..Default::default()
-        //             });
-        //         }
-        //         nano_crl2_lsp::completion::ImCompleteCompletionItem::Function(
-        //             name,
-        //             args,
-        //         ) => {
-        //             result.push(CompletionItem {
-        //                 label: name.clone(),
-        //                 kind: Some(CompletionItemKind::FUNCTION),
-        //                 detail: Some(name.clone()),
-        //                 insert_text: Some(format!(
-        //                     "{}({})",
-        //                     name,
-        //                     args.iter()
-        //                         .enumerate()
-        //                         .map(|(index, item)| { format!("${{{}:{}}}", index + 1, item) })
-        //                         .collect::<Vec<_>>()
-        //                         .join(",")
-        //                 )),
-        //                 insert_text_format: Some(InsertTextFormat::SNIPPET),
-        //                 ..Default::default()
-        //             });
-        //         }
-        //     }
-        // }
-
-        // Ok(Some(CompletionResponse::Array(result)))
-        Ok(None)
+        let Ok(result) = self.lsp_context.query_completion_items(&document_uri, loc) else {
+            self.client.publish_diagnostics(
+                params.text_document_position.text_document.uri,
+                self.lsp_context.get_diagnostics(&document_uri),
+                None,
+            ).await;
+            return Ok(None)
+        };
+        Ok(Some(CompletionResponse::Array(result)))
     }
 
     async fn rename(&self, params: RenameParams) -> Result<Option<WorkspaceEdit>> {
@@ -361,7 +343,7 @@ impl Backend {
             todo!();
         } else if self.editor_config.check_parse_errors_continuously {
             if self.lsp_context.query_ast(params.uri.as_str()).is_err() {
-                self.lsp_context.get_diagnostics()
+                self.lsp_context.get_diagnostics(params.uri.as_str())
             } else {
                 Vec::new()
             }
@@ -389,14 +371,14 @@ impl Backend {
             Ok(None) => {
                 self.client.log_message(
                     MessageType::INFO,
-                    &"the cursor is not pointing at a node",
+                    "the cursor is not pointing at a node",
                 ).await;
                 return Ok(None);
             },
             Err(()) => {
                 self.client.log_message(
                     MessageType::INFO,
-                    &"error found while trying to find clicked node",
+                    "error found while trying to find clicked node",
                 ).await;
                 return Ok(None);
             },

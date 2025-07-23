@@ -1,96 +1,97 @@
 {
-  "name": "nano-crl2-lsp",
-  "description": "Extension for mCRL2, implemented using the language server protocol (LSP)",
-  "license": "MIT",
-  "version": "1.5.0",
-  "publisher": "nano-crl2",
-  "categories": [],
-  "keywords": [
-    "language-server",
-    "tower-lsp"
-  ],
-  "repository": {
-    "url": "https://github.com/emilia-h/nano-crl2-lsp"
-  },
-  "engines": {
-    "vscode": "^1.66.0"
-  },
-  "enabledApiProposals": [],
-  "activationEvents": [
-    "onLanguage:mcrl2"
-  ],
-  "main": "./dist/extension.js",
-  "contributes": {
-    "languages": [
-      {
-        "id": "mcrl2",
-        "extensions": [
-          ".mcrl2"
-        ]
-      }
+    "name": "nano-crl2-lsp",
+    "description": "Extension for mCRL2, implemented using the language server protocol (LSP)",
+    "license": "MIT",
+    "version": "0.1.1",
+    "publisher": "nano-crl2",
+    "categories": [],
+    "keywords": [
+        "language-server",
+        "tower-lsp"
     ],
-    "grammars": [
-      {
-        "language": "mcrl2",
-        "scopeName": "source.mcrl2_model",
-        "path": "mcrl2_model.tmGrammar.json"
-      }
+    "repository": {
+        "url": "https://github.com/emilia-h/nano-crl2-lsp"
+    },
+    "engines": {
+        "vscode": "^1.66.0"
+    },
+    "enabledApiProposals": [],
+    "activationEvents": [
+        "onLanguage:mcrl2"
     ],
-    "configuration": {
-      "type": "object",
-      "title": "nano-crl2-lsp",
-      "properties": {
-        "nano-crl2-lsp.trace.server": {
-          "type": "string",
-          "scope": "window",
-          "enum": [
-            "off",
-            "messages",
-            "verbose"
-          ],
-          "enumDescriptions": [
-            "No traces",
-            "Error only",
-            "Full log"
-          ],
-          "default": "off",
-          "description": "Traces the communication between VS Code and the language server."
+    "main": "./dist/extension.js",
+    "contributes": {
+        "languages": [
+            {
+                "id": "mcrl2",
+                "extensions": [
+                    ".mcrl2"
+                ],
+                "configuration": "./language-configuration.json"
+            }
+        ],
+        "grammars": [
+            {
+                "language": "mcrl2",
+                "scopeName": "source.mcrl2_model",
+                "path": "mcrl2_model.tmGrammar.json"
+            }
+        ],
+        "configuration": {
+            "type": "object",
+            "title": "nano-crl2-lsp",
+            "properties": {
+                "nano-crl2-lsp.trace.server": {
+                    "type": "string",
+                    "scope": "window",
+                    "enum": [
+                        "off",
+                        "messages",
+                        "verbose"
+                    ],
+                    "enumDescriptions": [
+                        "No traces",
+                        "Error only",
+                        "Full log"
+                    ],
+                    "default": "off",
+                    "description": "Traces the communication between VS Code and the language server."
+                }
+            }
         }
-      }
+    },
+    "scripts": {
+        "postinstall": "cd client && npm i",
+        "vscode:prepublish": "npm run build",
+        "test-compile": "tsc -p ./",
+        "build": "npm run check-types && node esbuild.js --production",
+        "check-types": "tsc --noEmit",
+        "lint": "eslint src --ext ts",
+        "pretest": "npm run build && npm run lint",
+        "test": "node ./out/test/runTest.js",
+        "package": "vsce package --no-dependencies",
+        "publish": "vsce publish --no-dependencies"
+    },
+    "devDependencies": {
+        "@types/glob": "^7.1.3",
+        "@types/mocha": "^8.0.0",
+        "@types/node": "^12.12.0",
+        "@typescript-eslint/eslint-plugin": "^3.8.0",
+        "@typescript-eslint/parser": "^3.8.0",
+        "cross-env": "^7.0.2",
+        "electron-rebuild": "^1.11.0",
+        "eslint": "^7.6.0",
+        "glob": "^7.1.7",
+        "mocha": "^8.0.1",
+        "typescript": "5.4.5",
+        "vscode-test": "^1.4.0",
+        "vscode-uri": "^3.0.2",
+        "webpack": "^5.82.1",
+        "webpack-cli": "^6.0.1"
+    },
+    "dependencies": {
+        "esbuild": "^0.25.8",
+        "ts-loader": "^9.5.2",
+        "vscode-languageclient": "9.0.1"
     }
-  },
-  "scripts": {
-    "postinstall": "cd client && npm i",
-    "vscode:prepublish": "npm run build",
-    "test-compile": "tsc -p ./",
-    "build": "npm run check-types && node esbuild.js --production",
-    "check-types": "tsc --noEmit",
-    "lint": "eslint src --ext ts",
-    "pretest": "npm run build && npm run lint",
-    "test": "node ./out/test/runTest.js",
-    "package": "vsce package --no-dependencies",
-    "publish": "vsce publish --no-dependencies"
-  },
-  "devDependencies": {
-    "@types/glob": "^7.1.3",
-    "@types/mocha": "^8.0.0",
-    "@types/node": "^12.12.0",
-    "@typescript-eslint/eslint-plugin": "^3.8.0",
-    "@typescript-eslint/parser": "^3.8.0",
-    "cross-env": "^7.0.2",
-    "electron-rebuild": "^1.11.0",
-    "eslint": "^7.6.0",
-    "glob": "^7.1.7",
-    "mocha": "^8.0.1",
-    "typescript": "5.4.5",
-    "vscode-test": "^1.4.0",
-    "vscode-uri": "^3.0.2",
-    "webpack": "^5.82.1",
-    "webpack-cli": "^6.0.1"
-  },
-  "dependencies": {
-    "esbuild": "^0.25.8",
-    "ts-loader": "^9.5.2",
-    "vscode-languageclient": "9.0.1"
-  }
 }

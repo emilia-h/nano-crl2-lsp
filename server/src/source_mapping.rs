@@ -1,11 +1,46 @@
 
+use nano_crl2::analysis::semantic::name_resolution::{get_defs_in_context, NameLookup, NameLookupEnum};
 use nano_crl2::core::syntax::{Identifier, SourceCursorPos, SourceRange};
+use nano_crl2::ir::decl::DefId;
 use nano_crl2::ir::expr::IrExprEnum;
-use nano_crl2::ir::iterator::IrIterator;
+use nano_crl2::ir::iterator::{IrIterator, ParentIterator};
 use nano_crl2::ir::module::{IrModule, NodeId};
 use nano_crl2::ir::proc::IrProcEnum;
 use nano_crl2::ir::sort::IrSortEnum;
 
+/// Returns the smallest node that contains the given location, or `None` if
+/// there is no node at that location.
+/// 
+/// This is implemented rather naively right now, since it still searches the
+/// entire IR.
+pub fn get_node_at_loc(
+    module: &IrModule,
+    loc: SourceCursorPos,
+) -> Option<(SourceRange, NodeId)> {
+    let mut best = None;
+    let mut best_distance = (u32::MAX, i64::MAX);
+    for node in module {
+        let node_loc = module.get_node_loc(node);
+        if node_loc.contains_cursor(loc) && node_loc.get_distance() < best_distance {
+            best = Some((node_loc, node));
+            best_distance = node_loc.get_distance();
+        }
+    }
+    best
+}
+
+/// Returns a 3-tuple that stores an identifier at the given location, or
+/// `None` if there is no identifier at that location.
+/// 
+/// The return value is a 3-tuple of:
+/// - The source range of the identifier containing the given location
+/// - The node that stores the identifier
+/// - A boolean, where `true` means that this is a definition (e.g. `x` in
+/// `forall x: Nat . y`) and `false` means that it is a name that *refers* to a
+/// definition (e.g. `y` in `forall x: Nat . y`)
+/// 
+/// This is implemented rather naively right now, since it still searches the
+/// entire IR until it finds the given location. 
 pub fn get_identifier_node_at_loc(
     module: &IrModule,
     loc: SourceCursorPos,
@@ -23,12 +58,12 @@ pub fn get_identifier_node_at_loc(
 }
 
 /// Each item is a 4-tuple of:
-/// - The identifier that is found in the source;
+/// - The identifier that is found in the source
 /// - The source location of the identifier (not necessarily of the node!)
-/// - The node that the identifier can be found in;
+/// - The node that the identifier can be found in
 /// - A boolean, where `true` means that this is a definition (e.g. `x` in
 /// `forall x: Nat . y`) and `false` means that it is a name that *refers* to a
-/// definition (e.g. `y` in `forall x: Nat . y`).
+/// definition (e.g. `y` in `forall x: Nat . y`)
 pub struct IdentifierIterator<'m> {
     module: &'m IrModule,
     ir_iterator: IrIterator<'m>,
@@ -142,4 +177,24 @@ impl<'m> Iterator for IdentifierIterator<'m> {
         }
         None
     }
+}
+
+/// Returns the set of definitions that are valid at the given source location.
+pub fn get_def_context_at_loc(
+    ir_module: &IrModule,
+    loc: SourceCursorPos,
+) -> Result<Vec<DefId>, ()> {
+    let Some((_, node_id)) = get_node_at_loc(&ir_module, loc) else {
+        return Ok(Vec::new())
+    };
+    let mut result = Vec::new();
+    for node in ParentIterator::new(&ir_module, node_id) {
+        let def_ids = get_defs_in_context(&ir_module, node, &NameLookup {
+            value: NameLookupEnum::All,
+            identifier: None,
+            loc: ir_module.get_node_loc(node),
+        });
+        result.extend(def_ids);
+    }
+    Ok(result)
 }

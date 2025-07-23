@@ -3,6 +3,27 @@
 
 A language server protocol (LSP) implementation of the [mCRL2](https://mcrl2.org) model checking language.
 
+## Features
+
+The following features are currently planned, where the fully implemented features are crossed off:
+
+- [x] Static syntax highlighting of .mcrl2 files
+- [x] Parsing error detection
+- [x] Symbol renaming
+- [x] Basic language configuration stuff (matching braces, comment styles, etc.)
+- [ ] Go to definition (partially done, does not work well with overloaded definitions)
+- [ ] Show references (same situation)
+- [ ] Semantic syntax highlighting of .mcrl2 files
+- [ ] Auto-complete
+- [ ] Custom commands to run mCRL2 tools with Ctrl+Shift+P
+- [ ] Static syntax highlighting of .mcf files
+- [ ] Semantic syntax highlighting
+- [ ] Project file integration, reading of .mcrl2proj files, and understanding referencing of .mcrl2 files from .mcf
+  files
+- [ ] Documentation when hovering over symbols
+
+## Licensing
+
 The client implementation and other JavaScript boilerplatse in this repository is based on the
 [tower-lsp boilerplate](https://github.com/IWANABETHATGUY/tower-lsp-boilerplate) repository. The license for that can
 be found in [`./LICENSE`](./LICENSE).

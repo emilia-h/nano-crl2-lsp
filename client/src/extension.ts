@@ -53,7 +53,8 @@ export async function activate(context: ExtensionContext) {
   context.subscriptions.push(disposable);
 
   const traceOutputChannel = window.createOutputChannel("nanoCRL2-lsp trace");
-  const command = context.asAbsolutePath(path.join("server", "nano_crl2_lsp"));
+  const command = process.env.SERVER_PATH ||
+    context.asAbsolutePath(path.join("server", "nano_crl2_lsp"));
   const run: Executable = {
     command,
     options: {
