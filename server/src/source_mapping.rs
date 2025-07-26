@@ -16,13 +16,13 @@ use nano_crl2::ir::sort::IrSortEnum;
 pub fn get_node_at_loc(
     module: &IrModule,
     loc: SourceCursorPos,
-) -> Option<(SourceRange, NodeId)> {
-    let mut best = None;
+) -> (SourceRange, NodeId) {
+    let mut best = (module.loc, NodeId::Module(module.id));
     let mut best_distance = (u32::MAX, i64::MAX);
     for node in module {
         let node_loc = module.get_node_loc(node);
-        if node_loc.contains_cursor(loc) && node_loc.get_distance() < best_distance {
-            best = Some((node_loc, node));
+        if node_loc.contains_cursor(loc) && node_loc.get_distance() <= best_distance {
+            best = (node_loc, node);
             best_distance = node_loc.get_distance();
         }
     }
@@ -184,9 +184,7 @@ pub fn get_def_context_at_loc(
     ir_module: &IrModule,
     loc: SourceCursorPos,
 ) -> Result<Vec<DefId>, ()> {
-    let Some((_, node_id)) = get_node_at_loc(&ir_module, loc) else {
-        return Ok(Vec::new())
-    };
+    let (_, node_id) = get_node_at_loc(&ir_module, loc);
     let mut result = Vec::new();
     for node in ParentIterator::new(&ir_module, node_id) {
         let def_ids = get_defs_in_context(&ir_module, node, &NameLookup {

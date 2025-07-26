@@ -1,4 +1,5 @@
 
+use crate::def_info::get_completion_item;
 use crate::source_mapping::{get_identifier_node_at_loc, get_def_context_at_loc, IdentifierIterator};
 use crate::util::source_range_to_lsp_range;
 
@@ -79,18 +80,10 @@ impl LspContext {
     ) -> Result<Vec<CompletionItem>, ()> {
         let mut guard = self.lock()?;
         let ir_module = guard.get_last_valid_ir_module(file_name)?;
-        drop(guard);
-        let bla = get_def_context_at_loc(&ir_module, loc)?;
-        let result = bla
+        let result = get_def_context_at_loc(&ir_module, loc)?
             .into_iter()
             .map(|def_id| {
-                let node = ir_module.get_def_source(def_id);
-                let (def_id2, identifier, _) = get_def_data(&ir_module, node).unwrap();
-                assert_eq!(def_id, def_id2);
-                CompletionItem {
-                    label: identifier.to_string(),
-                    ..Default::default()
-                }
+                get_completion_item(&guard.analysis_context, &ir_module, def_id)
             })
             .collect();
         Ok(result)
@@ -236,7 +229,7 @@ impl LspContextStore {
                         }
                     },
                     Entry::Vacant(entry) => {
-                        entry.insert(module_id);
+                        entry.insert(module_id); 
                     },
                 }
                 Ok(ir_module)

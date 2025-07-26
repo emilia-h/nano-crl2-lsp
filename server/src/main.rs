@@ -9,7 +9,7 @@ use nano_crl2_lsp::semantic_token::{
     get_semantic_tokens_from_tokens,
     SEMANTIC_TOKEN_MAP,
 };
-use nano_crl2_lsp::util::source_range_to_lsp_range;
+use nano_crl2_lsp::util::{lsp_range_to_source_range, source_range_to_lsp_range};
 
 use serde_json::Value;
 
@@ -153,10 +153,12 @@ impl LanguageServer for Backend {
         let document_uri = params.text_document_position_params.text_document.uri.clone();
         let position = params.text_document_position_params.position;
 
-        self.client.log_message(
-            MessageType::LOG,
-            format!("goto_definition {:?} {:?}", document_uri.path(), position),
-        ).await;
+        let message = format!(
+            "goto definition {:?} {:?}",
+            document_uri.path(),
+            position,
+        );
+        self.client.log_message(MessageType::LOG, message).await;
 
         match self.cursor_source_click(document_uri, position).await? {
             Some(CursorSourceClick::Definition(value)) => {
@@ -171,10 +173,8 @@ impl LanguageServer for Backend {
         let document_uri = params.text_document_position.text_document.uri;
         let position = params.text_document_position.position;
 
-        self.client.log_message(
-            MessageType::LOG,
-            format!("references {:?} {:?}", document_uri.path(), position),
-        ).await;
+        let message = format!("references {:?} {:?}", document_uri.path(), position);
+        self.client.log_message(MessageType::LOG, message).await;
 
         match self.cursor_source_click(document_uri, position).await? {
             Some(CursorSourceClick::Definition(..)) => Ok(None),
@@ -196,7 +196,7 @@ impl LanguageServer for Backend {
         let document_uri = params.text_document.uri.to_string();
         let Ok(tokens) = self.lsp_context.query_token_list(&document_uri) else {
             // TODO report error
-            return Ok(None);
+            return Ok(None)
         };
 
         Ok(Some(SemanticTokensResult::Tokens(SemanticTokens {
@@ -209,16 +209,13 @@ impl LanguageServer for Backend {
         &self,
         params: SemanticTokensRangeParams,
     ) -> Result<Option<SemanticTokensRangeResult>> {
-        self.client
-            .log_message(MessageType::LOG, "semantic_tokens_range")
-            .await;
-
         let document_uri = params.text_document.uri.to_string();
+        let range = lsp_range_to_source_range(params.range);
 
-        // Ok(Some(SemanticTokensRangeResult::Tokens(SemanticTokens {
-        //     result_id: None,
-        //     data: semantic_tokens,
-        // })))
+        let message = format!("semantic tokens range {:?} {:?}", document_uri, range);
+        self.client.log_message(MessageType::LOG, message).await;
+
+        // TODO
         Ok(None)
     }
 
@@ -230,16 +227,8 @@ impl LanguageServer for Backend {
         let position = params.text_document_position.position;
         let loc = SourceCursorPos::new(position.line, position.character);
 
-        self.client.log_message(MessageType::LOG, format!("completion {}", document_uri)).await;
-
-        let mut result = Vec::new();
-        result.push(CompletionItem {
-            label: "hello_item".to_owned(),
-            insert_text: None,
-            kind: None,
-            detail: Some("Hello".to_owned()),
-            ..Default::default()
-        });
+        let message = format!("completion {} {:?}", document_uri, loc);
+        self.client.log_message(MessageType::LOG, message).await;
 
         let Ok(result) = self.lsp_context.query_completion_items(&document_uri, loc) else {
             self.client.publish_diagnostics(
