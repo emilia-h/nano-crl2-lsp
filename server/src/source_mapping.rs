@@ -35,16 +35,16 @@ pub fn get_node_at_loc(
 /// The return value is a 3-tuple of:
 /// - The source range of the identifier containing the given location
 /// - The node that stores the identifier
-/// - A boolean, where `true` means that this is a definition (e.g. `x` in
-/// `forall x: Nat . y`) and `false` means that it is a name that *refers* to a
-/// definition (e.g. `y` in `forall x: Nat . y`)
+/// - A definition ID, where `Some` means that this is a definition (e.g. `x`
+/// in `forall x: Nat . y`) and `None` means that it is a name that *refers* to
+/// a definition (e.g. `y` in `forall x: Nat . y`)
 /// 
 /// This is implemented rather naively right now, since it still searches the
 /// entire IR until it finds the given location. 
 pub fn get_identifier_node_at_loc(
     module: &IrModule,
     loc: SourceCursorPos,
-) -> Option<(SourceRange, NodeId, bool)> {
+) -> Option<(SourceRange, NodeId, Option<DefId>)> {
     let iterator = IdentifierIterator {
         module,
         ir_iterator: module.into_iter(),
@@ -61,9 +61,9 @@ pub fn get_identifier_node_at_loc(
 /// - The identifier that is found in the source
 /// - The source location of the identifier (not necessarily of the node!)
 /// - The node that the identifier can be found in
-/// - A boolean, where `true` means that this is a definition (e.g. `x` in
-/// `forall x: Nat . y`) and `false` means that it is a name that *refers* to a
-/// definition (e.g. `y` in `forall x: Nat . y`)
+/// - A definition ID, where `Some` means that this is a definition (e.g. `x`
+/// in `forall x: Nat . y`) and `None` means that it is a name that *refers* to
+/// a definition (e.g. `y` in `forall x: Nat . y`)
 pub struct IdentifierIterator<'m> {
     module: &'m IrModule,
     ir_iterator: IrIterator<'m>,
@@ -79,7 +79,7 @@ impl<'m> IdentifierIterator<'m> {
 }
 
 impl<'m> Iterator for IdentifierIterator<'m> {
-    type Item = (&'m Identifier, SourceRange, NodeId, bool);
+    type Item = (&'m Identifier, SourceRange, NodeId, Option<DefId>);
 
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(item) = self.ir_iterator.next() {
@@ -90,7 +90,7 @@ impl<'m> Iterator for IdentifierIterator<'m> {
                         &action.identifier,
                         action.identifier_loc,
                         id.into(),
-                        false,
+                        None,
                     ));
                 },
                 NodeId::Decl(id) => {
@@ -99,7 +99,7 @@ impl<'m> Iterator for IdentifierIterator<'m> {
                         &decl.identifier,
                         decl.identifier_loc,
                         id.into(),
-                        true,
+                        Some(decl.def_id),
                     ));
                 },
                 NodeId::Expr(id) => {
@@ -110,15 +110,15 @@ impl<'m> Iterator for IdentifierIterator<'m> {
                                 &identifier,
                                 expr.loc,
                                 id.into(),
-                                false,
+                                None,
                             ));
                         },
-                        IrExprEnum::Binder { identifier, identifier_loc, .. } => {
+                        IrExprEnum::Binder { def_id, identifier, identifier_loc, .. } => {
                             return Some((
                                 &identifier,
                                 *identifier_loc,
                                 id.into(),
-                                true,
+                                Some(*def_id),
                             ));
                         },
                         _ => {},
@@ -131,18 +131,18 @@ impl<'m> Iterator for IdentifierIterator<'m> {
                         &param.identifier,
                         param.identifier_loc,
                         id.into(),
-                        true,
+                        Some(param.def_id),
                     ));
                 },
                 NodeId::Proc(id) => {
                     let proc = self.module.get_proc(id);
                     match &proc.value {
-                        IrProcEnum::Sum { identifier, identifier_loc, .. } => {
+                        IrProcEnum::Sum { def_id, identifier, identifier_loc, .. } => {
                             return Some((
                                 identifier,
                                 *identifier_loc,
                                 id.into(),
-                                true,
+                                Some(*def_id),
                             ));
                         },
                         _ => {},
@@ -156,7 +156,7 @@ impl<'m> Iterator for IdentifierIterator<'m> {
                         &rewrite_var.identifier,
                         rewrite_var.identifier_loc,
                         id.into(),
-                        true,
+                        Some(rewrite_var.def_id),
                     ));
                 },
                 NodeId::Sort(id) => {
@@ -167,7 +167,7 @@ impl<'m> Iterator for IdentifierIterator<'m> {
                                 &identifier,
                                 sort.loc,
                                 id.into(),
-                                false,
+                                None,
                             ));
                         },
                         _ => {},

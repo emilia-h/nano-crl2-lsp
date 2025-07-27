@@ -1,6 +1,8 @@
 
-use crate::def_info::get_completion_item;
-use crate::source_mapping::{get_identifier_node_at_loc, get_def_context_at_loc, IdentifierIterator};
+use crate::def_info::{get_completion_item, get_def_info, DefInfoDisplay};
+use crate::source_mapping::{
+    get_identifier_node_at_loc, get_def_context_at_loc, IdentifierIterator,
+};
 use crate::util::source_range_to_lsp_range;
 
 use nano_crl2::analysis::context::AnalysisContext;
@@ -9,6 +11,7 @@ use nano_crl2::analysis::parsing::{query_ast_module, query_token_list};
 use nano_crl2::analysis::semantic::name_resolution::query_def_of_name;
 use nano_crl2::core::lexer::Token;
 use nano_crl2::core::syntax::{ModuleId, SourceCursorPos, SourceRange};
+use nano_crl2::ir::decl::DefId;
 use nano_crl2::ir::module::{IrModule, NodeId};
 use nano_crl2::ir::iterator::get_def_data;
 use nano_crl2::model::module::Module;
@@ -63,14 +66,11 @@ impl LspContext {
         &self,
         file_name: &str,
         loc: SourceCursorPos,
-    ) -> Result<Option<(SourceRange, NodeId, bool)>, ()> {
-        // NOTE: maybe it is better to not use last_valid_irs, because we are
-        // querying based on a precise location (so it MUST be the version that
-        // the user is currently seeing, even if that makes it less tolerant)
+    ) -> Result<Option<(SourceRange, NodeId, Option<DefId>)>, ()> {
         let mut guard = self.lock()?;
-        let ir_module = guard.get_last_valid_ir_module(file_name)?;
+        let module = guard.get_last_valid_ir_module(file_name)?;
         drop(guard);
-        Ok(get_identifier_node_at_loc(&ir_module, loc))
+        Ok(get_identifier_node_at_loc(&module, loc))
     }
 
     pub fn query_completion_items(
@@ -79,14 +79,38 @@ impl LspContext {
         loc: SourceCursorPos,
     ) -> Result<Vec<CompletionItem>, ()> {
         let mut guard = self.lock()?;
-        let ir_module = guard.get_last_valid_ir_module(file_name)?;
-        let result = get_def_context_at_loc(&ir_module, loc)?
+        let module = guard.get_last_valid_ir_module(file_name)?;
+        let result = get_def_context_at_loc(&module, loc)?
             .into_iter()
             .map(|def_id| {
-                get_completion_item(&guard.analysis_context, &ir_module, def_id)
+                get_completion_item(&guard.analysis_context, &module, def_id)
             })
             .collect();
         Ok(result)
+    }
+
+    /// Returns a formatted string of the definition that corresponds to the
+    /// identifier at the given location.
+    /// 
+    /// For instance, if `loc` is pointing at the `x` in `forall x : Nat, y`,
+    /// this will return `Ok(Some("x : Nat"))`.
+    pub fn query_definition_string(
+        &self,
+        file_name: &str,
+        loc: SourceCursorPos,
+    ) -> Result<Option<String>, ()> {
+        let mut guard = self.lock()?;
+        let module = guard.get_last_valid_ir_module(file_name)?;
+        let Some((_, node, def_id)) = get_identifier_node_at_loc(&module, loc) else {
+            return Ok(None)
+        };
+        let defining_id = match def_id {
+            Some(def_id) => def_id,
+            None => query_def_of_name(&guard.analysis_context, node)?,
+        };
+        let def_info = get_def_info(&guard.analysis_context, &module, defining_id);
+        drop(guard);
+        Ok(Some(DefInfoDisplay::new(&module, &def_info).to_string()))
     }
 
     pub fn query_definition(
@@ -95,14 +119,14 @@ impl LspContext {
     ) -> Result<(SourceRange, SourceRange), ()> {
         let guard = self.lock()?;
         let def_id = query_def_of_name(&guard.analysis_context, node_id)?;
-        let ir_module = query_ir_module(
+        let module = query_ir_module(
             &guard.analysis_context,
             def_id.get_module_id(),
         )?;
         drop(guard);
-        let node_id = ir_module.get_def_source(def_id);
-        let identifier_loc = get_def_data(&ir_module, node_id).unwrap().2;
-        let node_loc = ir_module.get_node_loc(node_id);
+        let node_id = module.get_def_source(def_id);
+        let identifier_loc = get_def_data(&module, node_id).unwrap().2;
+        let node_loc = module.get_node_loc(node_id);
         Ok((identifier_loc, node_loc))
     }
 
@@ -126,12 +150,12 @@ impl LspContext {
         } else {
             source_id
         };
-        let iterator = IdentifierIterator::new(&ir_module, start_node);
 
         let mut result = Vec::new();
-        for (identifier, loc, target, is_def) in iterator {
-            if is_def || identifier != source_identifier {
-                continue;
+        let iterator = IdentifierIterator::new(&ir_module, start_node);
+        for (identifier, loc, target, def_id) in iterator {
+            if def_id.is_some() || identifier != source_identifier {
+                continue; // easy optimization
             }
             let def = query_def_of_name(&guard.analysis_context, target)?;
             let def_source = ir_module.get_def_source(def);
@@ -218,7 +242,7 @@ impl LspContextStore {
             return Err(())
         };
         match query_ir_module(&self.analysis_context, module_id) {
-            Ok(ir_module) => {
+            Ok(module) => {
                 // if the newest version has a valid IR, update the
                 // `last_valid_irs` entry (deleting the old if necessary)
                 match self.last_valid_irs.entry(file_name.to_owned()) {
@@ -232,14 +256,14 @@ impl LspContextStore {
                         entry.insert(module_id); 
                     },
                 }
-                Ok(ir_module)
+                Ok(module)
             },
             Err(()) => {
                 // if the newest version does not have a valid IR, try to fall
                 // back to the last valid IR
                 match self.last_valid_irs.get(file_name) {
-                    Some(&old_ir_module_id) => {
-                        query_ir_module(&self.analysis_context, old_ir_module_id)
+                    Some(&old_module_id) => {
+                        query_ir_module(&self.analysis_context, old_module_id)
                     },
                     None => {
                         Err(())

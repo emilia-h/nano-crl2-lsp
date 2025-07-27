@@ -99,6 +99,7 @@ impl LanguageServer for Backend {
                 definition_provider: Some(OneOf::Left(true)),
                 references_provider: Some(OneOf::Left(true)),
                 rename_provider: Some(OneOf::Left(true)),
+                hover_provider: Some(HoverProviderCapability::Simple(true)),
                 ..ServerCapabilities::default()
             },
         })
@@ -275,6 +276,30 @@ impl LanguageServer for Backend {
         }
     }
 
+    async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
+        let document_uri = params.text_document_position_params.text_document.uri;
+        let position = params.text_document_position_params.position;
+
+        self.client.log_message(MessageType::LOG, "hover").await;
+
+        let detail = match self.lsp_context.query_definition_string(
+            document_uri.as_str(),
+            SourceCursorPos::new(position.line, position.character),
+        ) {
+            Ok(Some(value)) => value,
+            Ok(None) => return Ok(None),
+            Err(()) => return Ok(None),
+        };
+
+        Ok(Some(Hover {
+            contents: HoverContents::Scalar(MarkedString::LanguageString(LanguageString {
+                language: "mcrl2".to_owned(),
+                value: detail,
+            })),
+            range: None,
+        }))
+    }
+
     async fn did_change_configuration(&self, _: DidChangeConfigurationParams) {
         self.client
             .log_message(MessageType::INFO, "configuration changed!")
@@ -352,7 +377,7 @@ impl Backend {
         document_uri: Url,
         position: Position,
     ) -> Result<Option<CursorSourceClick>> {
-        let (source_loc, node_id, is_def) = match self.lsp_context.query_identifier_node_at_loc(
+        let (source_loc, node_id, def_id) = match self.lsp_context.query_identifier_node_at_loc(
             &document_uri.to_string(),
             SourceCursorPos::new(position.line, position.character),
         ) {
@@ -362,21 +387,21 @@ impl Backend {
                     MessageType::INFO,
                     "the cursor is not pointing at a node",
                 ).await;
-                return Ok(None);
+                return Ok(None)
             },
             Err(()) => {
                 self.client.log_message(
                     MessageType::INFO,
                     "error found while trying to find clicked node",
                 ).await;
-                return Ok(None);
+                return Ok(None)
             },
         };
 
-        if is_def {
+        if def_id.is_some() {
             self.client.log_message(
                 MessageType::INFO,
-                &format!("finding references for {:?}", node_id),
+                format!("finding references for {:?}", node_id),
             ).await;
 
             let references = match self.lsp_context.query_references(node_id) {
@@ -384,7 +409,7 @@ impl Backend {
                 Err(()) => {
                     self.client.log_message(
                         MessageType::INFO,
-                        &"could not find references (reliably)",
+                        "could not find references (reliably)",
                     ).await;
                     return Ok(None)
                 },
@@ -400,7 +425,7 @@ impl Backend {
             let def_range = source_range_to_lsp_range(source_loc);
             Ok(Some(CursorSourceClick::References(result, def_range)))
         } else {
-            self.client.log_message(MessageType::INFO, &format!(
+            self.client.log_message(MessageType::INFO, format!(
                 "trying to go to definition of {:?} at {:?}...",
                 node_id,
                 source_loc,
@@ -411,7 +436,7 @@ impl Backend {
                 Err(()) => return Ok(None),
             };
 
-            self.client.log_message(MessageType::INFO, &format!(
+            self.client.log_message(MessageType::INFO, format!(
                 "found location {:?} inside {:?}!",
                 identifier_loc,
                 symbol_loc,

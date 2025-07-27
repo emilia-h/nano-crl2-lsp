@@ -1,6 +1,4 @@
 
-use std::fmt::Formatter;
-
 use nano_crl2::analysis::context::AnalysisContext;
 use nano_crl2::analysis::semantic::sort_resolution::{
     get_decl_sort, query_resolved_sort,
@@ -10,11 +8,13 @@ use nano_crl2::ir::decl::{DefId, IrDecl, IrDeclEnum};
 use nano_crl2::ir::display::ResolvedSortDisplay;
 use nano_crl2::ir::iterator::{DefiningNode, get_defining_node_from_def};
 use nano_crl2::ir::module::IrModule;
-
 use nano_crl2::ir::sort::ResolvedSort;
 use nano_crl2::util::caching::Interned;
+
+use std::fmt::{Display, Formatter};
+
 use tower_lsp::lsp_types::{
-    CompletionItem, CompletionItemKind, CompletionItemLabelDetails, Documentation, MarkupContent,
+    CompletionItem, CompletionItemKind, CompletionItemLabelDetails,
 };
 
 pub fn get_completion_item(
@@ -23,20 +23,12 @@ pub fn get_completion_item(
     def: DefId,
 ) -> CompletionItem {
     let def_info = get_def_info(context, module, def);
-    let resolved_sort = def_info.sort
-        .map(|x| ResolvedSortDisplay::new(module, &x).to_string());
 
+    let resolved_sort = def_info.sort.as_ref()
+        .map(|x| ResolvedSortDisplay::new(module, &x).to_string());
     let label_detail = resolved_sort.as_ref().map(|x| format!(": {}", x));
 
-    let mut detail = String::new();
-    if let Some(keyword) = def_info.keyword {
-        detail = keyword.to_owned();
-        detail.push_str(" ");
-    }
-    detail.push_str(def_info.identifier.get_value());
-    if let Some(ld) = &label_detail {
-        detail.push_str(ld);
-    }
+    let detail = DefInfoDisplay::new(module, &def_info).to_string();
 
     CompletionItem {
         label: def_info.identifier.to_string(),
@@ -75,7 +67,7 @@ pub fn get_def_info<'a>(
                 identifier,
                 keyword: None,
                 completion_item_kind: CompletionItemKind::VARIABLE,
-                sort: query_resolved_sort(context, sort).ok()
+                sort: query_resolved_sort(context, sort).ok(),
             }
         },
         Param(param) => {
@@ -83,7 +75,7 @@ pub fn get_def_info<'a>(
                 identifier: &param.identifier,
                 keyword: None,
                 completion_item_kind: CompletionItemKind::VARIABLE,
-                sort: query_resolved_sort(context, param.sort).ok()
+                sort: query_resolved_sort(context, param.sort).ok(),
             }
         },
         SumProc { identifier, sort, .. } => {
@@ -91,7 +83,7 @@ pub fn get_def_info<'a>(
                 identifier,
                 keyword: None,
                 completion_item_kind: CompletionItemKind::VARIABLE,
-                sort: query_resolved_sort(context, sort).ok()
+                sort: query_resolved_sort(context, sort).ok(),
             }
         },
         RewriteVar(rewrite_var) => {
@@ -99,7 +91,7 @@ pub fn get_def_info<'a>(
                 identifier: &rewrite_var.identifier,
                 keyword: Some("var"),
                 completion_item_kind: CompletionItemKind::VARIABLE,
-                sort: query_resolved_sort(context, rewrite_var.sort).ok()
+                sort: query_resolved_sort(context, rewrite_var.sort).ok(),
             }
         },
     }
@@ -110,6 +102,30 @@ pub struct DefInfo<'a> {
     keyword: Option<&'static str>,
     completion_item_kind: CompletionItemKind,
     sort: Option<Interned<ResolvedSort>>,
+}
+
+pub struct DefInfoDisplay<'a, 'b> {
+    module: &'b IrModule,
+    def_info: &'b DefInfo<'a>,
+}
+
+impl<'a, 'b> DefInfoDisplay<'a, 'b> {
+    pub fn new(module: &'b IrModule, def_info: &'b DefInfo<'a>) -> Self {
+        DefInfoDisplay { module, def_info }
+    }
+}
+
+impl<'a, 'b> Display for DefInfoDisplay<'a, 'b> {
+    fn fmt(&self, f: &mut Formatter) -> Result<(), std::fmt::Error> {
+        if let Some(keyword) = &self.def_info.keyword {
+            write!(f, "{} ", keyword)?;
+        }
+        write!(f, "{}", self.def_info.identifier)?;
+        if let Some(s) = &self.def_info.sort {
+            write!(f, ": {}", ResolvedSortDisplay::new(self.module, s))?;
+        }
+        Ok(())
+    }
 }
 
 fn decl_to_completion_item_kind(decl: &IrDecl) -> CompletionItemKind {
